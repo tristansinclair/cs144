@@ -1,0 +1,2 @@
+cmake --build build --target tidy
+cmake --build build --target format
