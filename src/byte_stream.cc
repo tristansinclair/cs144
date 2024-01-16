@@ -32,7 +32,7 @@ void Writer::close()
 
 uint64_t Writer::available_capacity() const
 {
-  return capacity_ - ( bytesPushed_ + bytesPopped_ );
+  return capacity_ - bytesPushed_ + bytesPopped_;
 }
 
 uint64_t Writer::bytes_pushed() const
