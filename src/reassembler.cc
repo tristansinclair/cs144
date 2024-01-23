@@ -13,25 +13,28 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
     reassembledString_.resize( available_capacity );
   }
 
-  // if the first index is greater than the length of lastPushedIndex_ + available_capacity,
-  // then return (we can't store this data)
-  // or if the first index is less than the lastPushedIndex_, then return (we can't store this data)
-  // TODO overlap case???? after or
+  // if the first index is past the available capacity, then we can't store this substring
   if ( first_index > lastPushedIndex_ + available_capacity ) {
-    return;
-  }
-  if ( first_index < lastPushedIndex_ ) {
     return;
   }
 
   // using the first index and the data, push this substring onto the reassembledString_
   // trim if the data is longer than the available capacity
-  const uint64_t startIndex = first_index - lastPushedIndex_; // the index of the string
-  const uint64_t endIndex = min( startIndex + data.length(), available_capacity );
+  const size_t startIndex = first_index - lastPushedIndex_; // the index of the string
+  const size_t endIndex = min( startIndex + data.length(), available_capacity );
+
+  // hadnle the case where the data is shorter than the available capacity, but it is the last substring
+  bool unable_to_store = false;
+  if ( is_last_substring && endIndex < available_capacity ) {
+    unable_to_store = true;
+  }
+
   // now insert the data into the reassembledString_
-  reassembledString_.replace( startIndex, endIndex, data.substr( 0, endIndex - startIndex ) );
-  // now also update the charsAdded_ vector
-  for ( uint64_t i = startIndex; i < endIndex; i++ ) {
+  size_t insertLength = min( data.length(), available_capacity - startIndex );
+  reassembledString_.replace( startIndex, insertLength, data, 0, insertLength );
+
+  // Update charsAdded_ vector
+  for ( size_t i = startIndex; i < startIndex + insertLength; i++ ) {
     charsAdded_[i] = true;
   }
 
@@ -48,9 +51,22 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
   }
 
   // now we need to check if the stream is finished
-  if ( is_last_substring ) {
+  if ( is_last_substring && !unable_to_store ) {
     // if the stream is finished, then we need to close the output stream
-    output_.writer().close();
+
+    // check if there are any true bytes left in the charsAdded_ vector
+    bool allFalse = true;
+    for ( size_t i = 0; i < charsAdded_.size(); i++ ) {
+      if ( charsAdded_[i] ) {
+        allFalse = false;
+        break;
+      }
+    }
+
+    // if there are no true bytes left, then we can close the output stream
+    if ( allFalse ) {
+      output_.writer().close();
+    }
   }
 }
 
