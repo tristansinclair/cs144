@@ -1,4 +1,5 @@
 #include "reassembler.hh"
+#include <algorithm>
 #include <iostream>
 
 using namespace std;
@@ -43,13 +44,8 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
   fill( charsAdded_.begin() + startIndex, charsAdded_.begin() + endIndex, true );
 
   // get the number of bytes we can write, possibly 0!
-  size_t bytesToWrite = 0;
-  for ( size_t i = 0; i < availableCapacity; i++ ) {
-    if ( !charsAdded_[i] ) {
-      break;
-    }
-    bytesToWrite++;
-  }
+  size_t bytesToWrite = find( charsAdded_.begin(), charsAdded_.end(), false ) - charsAdded_.begin();
+  bytesToWrite = std::min( bytesToWrite, availableCapacity );
 
   // if we can write, then write to the stream and update the string/vector
   if ( bytesToWrite > 0 ) {
