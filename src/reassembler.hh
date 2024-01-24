@@ -43,7 +43,8 @@ public:
 
 private:
   ByteStream output_; // the Reassembler writes to this ByteStream
-  uint64_t lastPushedIndex_ { 0 };
   std::string reassembledString_ {};
   std::vector<bool> charsAdded_ {};
+  uint64_t finalIndex_ { UINT64_MAX };
+  bool seenFinalIndex_ { false };
 };

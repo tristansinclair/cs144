@@ -1,72 +1,75 @@
 #include "reassembler.hh"
+#include <iostream>
 
 using namespace std;
 
 void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
-  const uint64_t available_capacity = writer().available_capacity();
-  // available_capacity is the number of bytes we can store in the reassembler
+
+  const uint64_t availableCapacity = writer().available_capacity();
+  uint64_t firstUnassembledIndex = reader().bytes_popped() + reader().bytes_buffered();
+
+  if ( is_last_substring ) {
+    finalIndex_ = first_index + data.length();
+    seenFinalIndex_ = true;
+  }
 
   // when the available capacity changes, it means data from the stream has been popped
-  if ( available_capacity != charsAdded_.capacity() ) {
-    charsAdded_.resize( available_capacity );
-    reassembledString_.resize( available_capacity );
+  if ( availableCapacity != charsAdded_.capacity() ) {
+    charsAdded_.resize( availableCapacity );
+    reassembledString_.resize( availableCapacity );
   }
 
   // if the first index is past the available capacity, then we can't store this substring
-  if ( first_index > lastPushedIndex_ + available_capacity ) {
+  if ( first_index >= firstUnassembledIndex + availableCapacity ) {
     return;
+  }
+  if ( first_index < firstUnassembledIndex ) {
+    if ( first_index + data.length() - 1 >= firstUnassembledIndex ) {
+      // if the first index is before the firstUnassembledIndex, then we need to trim the data
+      // to only include the part that we can store
+
+      data = data.substr( firstUnassembledIndex - first_index );
+      first_index = firstUnassembledIndex;
+
+    } else {
+      return;
+    }
   }
 
   // using the first index and the data, push this substring onto the reassembledString_
   // trim if the data is longer than the available capacity
-  const size_t startIndex = first_index - lastPushedIndex_; // the index of the string
-  const size_t endIndex = min( startIndex + data.length(), available_capacity );
-
-  // hadnle the case where the data is shorter than the available capacity, but it is the last substring
-  bool unable_to_store = false;
-  if ( is_last_substring && endIndex < available_capacity ) {
-    unable_to_store = true;
-  }
+  const size_t startIndex = first_index - firstUnassembledIndex; // the index of the string
+  const size_t endIndex = min( startIndex + data.length(), startIndex + availableCapacity );
 
   // now insert the data into the reassembledString_
-  size_t insertLength = min( data.length(), available_capacity - startIndex );
-  reassembledString_.replace( startIndex, insertLength, data, 0, insertLength );
+  reassembledString_.replace( startIndex, endIndex, data.substr( 0, endIndex - startIndex ) );
 
-  // Update charsAdded_ vector
-  for ( size_t i = startIndex; i < startIndex + insertLength; i++ ) {
+  for ( size_t i = startIndex; i < endIndex; i++ ) {
     charsAdded_[i] = true;
   }
 
-  // now we need to check if we can write to the output stream using the charsAdded_ vector
-  // if the first index is true, then we can write to the output stream until we hit a false
-  while ( charsAdded_[0] ) {
-    // now we can write to the output stream
-    output_.writer().push( reassembledString_.substr( 0, 1 ) );
-    // now we need to remove the first character from the reassembledString_ and charsAdded_
-    reassembledString_.erase( 0, 1 );
-    charsAdded_.erase( charsAdded_.begin() );
-    // now we need to update the lastPushedIndex_
-    lastPushedIndex_++;
+  size_t bytesToWrite = 0;
+  for ( size_t i = 0; i < availableCapacity; i++ ) {
+    if ( !charsAdded_[i] ) {
+      // bytesToWrite = i;
+      break;
+    }
+    bytesToWrite++;
   }
 
-  // now we need to check if the stream is finished
-  if ( is_last_substring && !unable_to_store ) {
-    // if the stream is finished, then we need to close the output stream
+  if ( bytesToWrite > 0 ) {
+    output_.writer().push( reassembledString_.substr( 0, bytesToWrite ) );
+    // lastPushedIndex_ += bytesToWrite;
 
-    // check if there are any true bytes left in the charsAdded_ vector
-    bool allFalse = true;
-    for ( size_t i = 0; i < charsAdded_.size(); i++ ) {
-      if ( charsAdded_[i] ) {
-        allFalse = false;
-        break;
-      }
-    }
+    reassembledString_.erase( 0, bytesToWrite );
+    charsAdded_.erase( charsAdded_.begin(), charsAdded_.begin() + bytesToWrite );
+  }
 
-    // if there are no true bytes left, then we can close the output stream
-    if ( allFalse ) {
-      output_.writer().close();
-    }
+  firstUnassembledIndex += bytesToWrite;
+
+  if ( finalIndex_ == firstUnassembledIndex ) {
+    output_.writer().close();
   }
 }
 
