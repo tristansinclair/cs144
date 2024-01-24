@@ -5,16 +5,15 @@ using namespace std;
 
 void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
-
-  const uint64_t availableCapacity = writer().available_capacity();
+  // Update firstUnassembledIndex at the start
   uint64_t firstUnassembledIndex = reader().bytes_popped() + reader().bytes_buffered();
+  const uint64_t availableCapacity = writer().available_capacity();
 
   if ( is_last_substring ) {
     finalIndex_ = first_index + data.length();
-    seenFinalIndex_ = true;
   }
 
-  // when the available capacity changes, it means data from the stream has been popped
+  // resize the vectors if necessary (after data from stream is popped)
   if ( availableCapacity != charsAdded_.capacity() ) {
     charsAdded_.resize( availableCapacity );
     reassembledString_.resize( availableCapacity );
@@ -24,49 +23,41 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
   if ( first_index >= firstUnassembledIndex + availableCapacity ) {
     return;
   }
+
+  // first_index is before the firstUnassembledIndex
   if ( first_index < firstUnassembledIndex ) {
-    if ( first_index + data.length() - 1 >= firstUnassembledIndex ) {
-      // if the first index is before the firstUnassembledIndex, then we need to trim the data
-      // to only include the part that we can store
-
-      data = data.substr( firstUnassembledIndex - first_index );
-      first_index = firstUnassembledIndex;
-
-    } else {
-      return;
+    if ( first_index + data.length() <= firstUnassembledIndex ) {
+      return; // data is entirely before the firstUnassembledIndex, ignore it
     }
+    // trim data and adjust first_index
+    data = data.substr( firstUnassembledIndex - first_index );
+    first_index = firstUnassembledIndex;
   }
 
-  // using the first index and the data, push this substring onto the reassembledString_
-  // trim if the data is longer than the available capacity
-  const size_t startIndex = first_index - firstUnassembledIndex; // the index of the string
-  const size_t endIndex = min( startIndex + data.length(), startIndex + availableCapacity );
+  // convert index to string/vector indexes for trimming
+  size_t startIndex = first_index - firstUnassembledIndex;
+  size_t endIndex = min( startIndex + data.length(), startIndex + availableCapacity );
 
-  // now insert the data into the reassembledString_
-  reassembledString_.replace( startIndex, endIndex, data.substr( 0, endIndex - startIndex ) );
+  // fill in the data
+  reassembledString_.replace( startIndex, endIndex - startIndex, data );
+  fill( charsAdded_.begin() + startIndex, charsAdded_.begin() + endIndex, true );
 
-  for ( size_t i = startIndex; i < endIndex; i++ ) {
-    charsAdded_[i] = true;
-  }
-
+  // get the number of bytes we can write, possibly 0!
   size_t bytesToWrite = 0;
   for ( size_t i = 0; i < availableCapacity; i++ ) {
     if ( !charsAdded_[i] ) {
-      // bytesToWrite = i;
       break;
     }
     bytesToWrite++;
   }
 
+  // if we can write, then write to the stream and update the string/vector
   if ( bytesToWrite > 0 ) {
     output_.writer().push( reassembledString_.substr( 0, bytesToWrite ) );
-    // lastPushedIndex_ += bytesToWrite;
-
     reassembledString_.erase( 0, bytesToWrite );
     charsAdded_.erase( charsAdded_.begin(), charsAdded_.begin() + bytesToWrite );
+    firstUnassembledIndex += bytesToWrite;
   }
-
-  firstUnassembledIndex += bytesToWrite;
 
   if ( finalIndex_ == firstUnassembledIndex ) {
     output_.writer().close();
