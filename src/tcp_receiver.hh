@@ -26,5 +26,6 @@ public:
   const Writer& writer() const { return reassembler_.writer(); }
 
 private:
+  std::optional<Wrap32> zero_point_ {};
   Reassembler reassembler_;
 };
