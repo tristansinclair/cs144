@@ -5,7 +5,6 @@ using namespace std;
 
 void TCPReceiver::receive( TCPSenderMessage message )
 {
-
   if ( message.RST ) {
     reader().set_error(); // set the error flag
     return;
