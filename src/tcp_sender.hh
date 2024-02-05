@@ -61,4 +61,5 @@ private:
   uint64_t abs_last_sent_sn_ { 0 };
 
   bool sent_SYN_ { false };
+  uint64_t bytes_sent { 0 };
 };
