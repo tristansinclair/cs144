@@ -49,8 +49,13 @@ private:
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
 
+  uint64_t RTO_ms_ { initial_RTO_ms_ };
+  uint64_t time_alive_ { 0 };
+
+  bool timer_running_ { false };
   uint64_t timer_ { 0 };
   std::queue<TCPSenderMessage> outstanding_segments_ {};
+  uint16_t retransmitted_count_ {0};
   // Wrap32 last_seen_sq_ {}; make this initialized to isn_ in constructor
 
   // vars used for holding info regarding the window size and how much to send

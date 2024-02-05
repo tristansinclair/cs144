@@ -25,6 +25,14 @@ void TCPSender::push( const TransmitFunction& transmit )
       sent_SYN_ = true;
     }
     transmit( empty_message );
+
+    if ( empty_message.sequence_length() > 0 ) {
+      if ( !timer_running_ ) {
+        timer_running_ = true;
+        timer_ = time_alive_;
+      }
+      outstanding_segments_.push( empty_message );
+    }
     // increment the last sent sequence number
     abs_last_sent_sn_ += empty_message.sequence_length();
     return;
@@ -65,6 +73,11 @@ void TCPSender::push( const TransmitFunction& transmit )
 
     // send the message
     transmit( new_message );
+    if ( timer_running_ == false ) {
+      timer_running_ = true;
+      timer_ = time_alive_;
+    }
+
     // add message to the queue
     outstanding_segments_.push( new_message );
     // increment the last sent sequence number
@@ -110,24 +123,20 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
 void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )
 {
-  // Your code here.
-  (void)ms_since_last_tick;
-  (void)transmit;
-  (void)initial_RTO_ms_;
+  time_alive_ += ms_since_last_tick;
 
-  // Time has passed — a certain number of milliseconds since the last time this method was called. The sender may
-  // need to retransmit an outstanding segment; it can call the transmit() function to do this. (Reminder: please
-  // don’t try to use real-world “clock” or “gettimeofday” functions in your code; the only reference to time
-  // passing comes from the ms since last tick argument.)
-
-  // check if there are any outstanding segments
-  // if there are, check if the oldest segment has been outstanding for longer than the current retransmission
-  // timeout if it has, retransmit it if it hasn't, do nothing if there are no outstanding segments, do nothing
-  // outstanding_segments_
-
-  // if ms_since_last_tick
-
-  if ( outstanding_segments_.empty() ) {
-    return;
+  if ( time_alive_ - timer_ >= RTO_ms_ ) {
+    if ( !outstanding_segments_.empty() ) {
+      transmit( outstanding_segments_.front() );
+      outstanding_segments_.pop();
+      retransmitted_count_++;
+      RTO_ms_ *= 2;
+    } 
+    // else {
+    //   timer_running_ = false;
+    //   retransmitted_count_ = 0;
+    //   RTO_ms_ = initial_RTO_ms_;
+    //   return;
+    // }
   }
 }
