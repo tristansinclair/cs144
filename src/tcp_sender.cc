@@ -47,7 +47,11 @@ void TCPSender::push( const TransmitFunction& transmit )
 
     // calculate the number of bytes to send, based on the window size and the number of bytes in the input stream
     // then make sure it's not more than the max payload size
-    const size_t bytes_to_send = min( min( reader().bytes_buffered(), window_size_ ), TCPConfig::MAX_PAYLOAD_SIZE );
+    // const size_t bytes_to_send = min( min( reader().bytes_buffered(), window_size_ ), TCPConfig::MAX_PAYLOAD_SIZE
+    // ); number of bytes to send is abs_last_sent_sn_ and the abs_last_ackn_sn_ and the window size matter here
+    const size_t bytes_to_send = min( min( reader().bytes_buffered(), window_size_ - sequence_numbers_in_flight() ),
+                                      TCPConfig::MAX_PAYLOAD_SIZE );
+
     // set the payload of the message to the substring here
     new_message.payload = input_.reader().peek().substr( 0, bytes_to_send );
     // pop the bytes from the input stream, so they're not sent again
