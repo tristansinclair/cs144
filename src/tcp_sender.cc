@@ -11,12 +11,13 @@ uint64_t TCPSender::sequence_numbers_in_flight() const
 
 uint64_t TCPSender::consecutive_retransmissions() const
 {
-  // Your code here.
-  return {};
+  return retransmitted_count_;
 }
 
 void TCPSender::push( const TransmitFunction& transmit )
 {
+  cout << "input_.reader().is_finished()" << input_.reader().is_finished() << endl;
+
   // if the window size is zero, transmit an empty message, and return
   if ( window_size_ == 0 ) {
     TCPSenderMessage empty_message = make_empty_message();
@@ -24,12 +25,18 @@ void TCPSender::push( const TransmitFunction& transmit )
       empty_message.SYN = true;
       sent_SYN_ = true;
     }
+
+    if ( input_.reader().is_finished() && !sent_FIN_ ) {
+      empty_message.FIN = true;
+      sent_FIN_ = true;
+    }
+
     transmit( empty_message );
 
     if ( empty_message.sequence_length() > 0 ) {
       if ( !timer_running_ ) {
         timer_running_ = true;
-        timer_ = time_alive_;
+        timer_ = 0;
       }
       outstanding_segments_.push( empty_message );
     }
@@ -45,18 +52,12 @@ void TCPSender::push( const TransmitFunction& transmit )
     TCPSenderMessage new_message;
     new_message.seqno = Wrap32::wrap( abs_last_sent_sn_, isn_ );
 
-    // abs_last_sent_sn_ is the tail of the last sent message I guess
-
     // if we haven't popped any bytes yet, this is the first message!
     if ( input_.reader().bytes_popped() == 0 && !sent_SYN_ ) {
       new_message.SYN = true;
       sent_SYN_ = true;
     }
 
-    // calculate the number of bytes to send, based on the window size and the number of bytes in the input stream
-    // then make sure it's not more than the max payload size
-    // const size_t bytes_to_send = min( min( reader().bytes_buffered(), window_size_ ), TCPConfig::MAX_PAYLOAD_SIZE
-    // ); number of bytes to send is abs_last_sent_sn_ and the abs_last_ackn_sn_ and the window size matter here
     const size_t bytes_to_send = min( min( reader().bytes_buffered(), window_size_ - sequence_numbers_in_flight() ),
                                       TCPConfig::MAX_PAYLOAD_SIZE );
 
@@ -66,22 +67,37 @@ void TCPSender::push( const TransmitFunction& transmit )
     input_.reader().pop( bytes_to_send );
 
     // if the reader is finished, set the FIN flag
-    if ( input_.reader().is_finished() ) {
-      new_message.FIN = true;
-      // ???? too many bytes in payload? if the window size is maxed out, we can't send a FIN or SYN?
+    if ( input_.reader().is_finished() && !sent_FIN_ ) {
+      // Check if there's enough space in the window for both the payload and the FIN flag
+      if ( bytes_to_send < ( window_size_ - sequence_numbers_in_flight() ) ) {
+        new_message.FIN = true;
+        sent_FIN_ = true;
+      }
     }
 
     // send the message
     transmit( new_message );
     if ( timer_running_ == false ) {
       timer_running_ = true;
-      timer_ = time_alive_;
     }
 
-    // add message to the queue
     outstanding_segments_.push( new_message );
-    // increment the last sent sequence number
     abs_last_sent_sn_ += new_message.sequence_length();
+  }
+
+  // if the reader is finished, and there are no more bytes to send, and the queue is empty, send a FIN
+  if ( input_.reader().is_finished() && window_size_ - sequence_numbers_in_flight() && !sent_FIN_ ) {
+    TCPSenderMessage fin_message
+      = make_empty_message(); // Assuming make_empty_message() correctly sets the sequence number
+    fin_message.FIN = true;
+    sent_FIN_ = true; // Mark FIN as sent
+    transmit( fin_message );
+
+    if ( timer_running_ == false ) {
+      timer_running_ = true;
+    }
+    outstanding_segments_.push( fin_message );
+    abs_last_sent_sn_ += fin_message.sequence_length();
   }
 }
 
@@ -109,12 +125,22 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
     // remove all segments from the queue that have been acknowledged
     while ( !outstanding_segments_.empty() ) {
-      if ( outstanding_segments_.front().seqno.unwrap( isn_, reader().bytes_popped() )
-           < ( abs_last_ackn_sn_ + window_size_ ) ) {
+      if ( outstanding_segments_.front().seqno.unwrap( isn_, reader().bytes_popped() ) < abs_last_ackn_sn_ ) {
         outstanding_segments_.pop();
+        timer_running_ = false;
+        timer_ = 0;
+        retransmitted_count_ = 0;
+        RTO_ms_ = initial_RTO_ms_;
       } else {
         break;
       }
+    }
+    // if the queue is empty, stop the timer
+    if ( outstanding_segments_.empty() ) {
+      timer_running_ = false;
+      timer_ = 0;
+      retransmitted_count_ = 0;
+      RTO_ms_ = initial_RTO_ms_;
     }
   } else {
     return; // no ackno, do nothing
@@ -123,20 +149,22 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
 void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )
 {
-  time_alive_ += ms_since_last_tick;
+  // time_alive_ += ms_since_last_tick;
+  timer_ += ms_since_last_tick;
 
-  if ( time_alive_ - timer_ >= RTO_ms_ ) {
+  if ( timer_ >= RTO_ms_ ) {
     if ( !outstanding_segments_.empty() ) {
       transmit( outstanding_segments_.front() );
-      outstanding_segments_.pop();
+      // outstanding_segments_.pop();
       retransmitted_count_++;
+      timer_ = 0;
       RTO_ms_ *= 2;
-    } 
-    // else {
-    //   timer_running_ = false;
-    //   retransmitted_count_ = 0;
-    //   RTO_ms_ = initial_RTO_ms_;
-    //   return;
-    // }
+    } else {
+      timer_running_ = false;
+      timer_ = 0;
+      retransmitted_count_ = 0;
+      RTO_ms_ = initial_RTO_ms_;
+      return;
+    }
   }
 }
