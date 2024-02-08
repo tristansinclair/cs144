@@ -16,12 +16,10 @@ uint64_t TCPSender::consecutive_retransmissions() const
 
 void TCPSender::push( const TransmitFunction& transmit )
 {
-  cout << "input_.reader().is_finished()" << input_.reader().is_finished() << endl;
-
   // if the window size is zero, transmit an empty message, and return
   if ( window_size_ == 0 ) {
     TCPSenderMessage empty_message = make_empty_message();
-    if ( input_.reader().bytes_popped() == 0 ) {
+    if ( input_.reader().bytes_popped() == 0 && !sent_SYN_) {
       empty_message.SYN = true;
       sent_SYN_ = true;
     }
@@ -67,7 +65,7 @@ void TCPSender::push( const TransmitFunction& transmit )
     input_.reader().pop( bytes_to_send );
 
     // if the reader is finished, set the FIN flag
-    if ( input_.reader().is_finished() && !sent_FIN_ ) {
+    if ( input_.reader().is_finished() && window_size_ - sequence_numbers_in_flight() && !sent_FIN_ ) {
       // Check if there's enough space in the window for both the payload and the FIN flag
       if ( bytes_to_send < ( window_size_ - sequence_numbers_in_flight() ) ) {
         new_message.FIN = true;
@@ -118,10 +116,17 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   // }
 
   if ( msg.ackno.has_value() ) {
-    // take the ackno and window size to it to get the right edge of the window
-    abs_last_ackn_sn_ = msg.ackno.value().unwrap( isn_, reader().bytes_popped() );
+
     // set the window size
     window_size_ = msg.window_size;
+
+    // handle case is ackno received is beyond the last sent sequence number
+    if ( msg.ackno.value().unwrap( isn_, reader().bytes_popped() ) > abs_last_sent_sn_ ) {
+      return;
+    }
+
+    // take the ackno and window size to it to get the right edge of the window
+    abs_last_ackn_sn_ = msg.ackno.value().unwrap( isn_, reader().bytes_popped() );
 
     // remove all segments from the queue that have been acknowledged
     while ( !outstanding_segments_.empty() ) {
