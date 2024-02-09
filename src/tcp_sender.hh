@@ -60,7 +60,7 @@ private:
 
   // vars used for holding info regarding the window size and how much to send
   // uint64_t last_ackn_sn_ { 0 };
-  size_t window_size_ {};
+  size_t window_size_ { 1 };
   // uint64_t last_sent_sn_ { 0 };
   uint64_t abs_last_ackn_sn_ { 0 };
   uint64_t abs_last_sent_sn_ { 0 };
