@@ -44,6 +44,13 @@ void TCPSender::push( const TransmitFunction& transmit )
       space--;
     }
 
+    if ( input_.reader().has_error() ) {
+      new_message.RST = true;
+      transmit( new_message );
+      outstanding_segments_.push( new_message );
+      abs_last_sent_sn_ += new_message.sequence_length();
+    }
+
     if ( new_message.sequence_length() == 0 ) {
       break;
     }
@@ -63,11 +70,20 @@ TCPSenderMessage TCPSender::make_empty_message() const
 {
   TCPSenderMessage empty_message;
   empty_message.seqno = Wrap32::wrap( abs_last_sent_sn_, isn_ );
+
+  if ( input_.reader().has_error() ) {
+    empty_message.RST = true;
+  }
+
   return empty_message;
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
+  if ( msg.RST ) {
+    input_.set_error();
+  }
+
   if ( msg.ackno.has_value() ) {
 
     // set the window size
@@ -87,7 +103,10 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
     // remove all segments from the queue that have been acknowledged
     while ( !outstanding_segments_.empty() ) {
-      if ( outstanding_segments_.front().seqno.unwrap( isn_, reader().bytes_popped() ) < abs_last_ackn_sn_ ) {
+
+      if ( outstanding_segments_.front().seqno.unwrap( isn_, reader().bytes_popped() )
+             + outstanding_segments_.front().sequence_length() - 1
+           < abs_last_ackn_sn_ ) {
         outstanding_segments_.pop();
         timer_running_ = false;
         timer_ = 0;
