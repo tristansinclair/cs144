@@ -19,7 +19,7 @@ void TCPSender::push( const TransmitFunction& transmit )
   // if the window size is zero, transmit an empty message, and return
   if ( window_size_ == 0 ) {
     TCPSenderMessage empty_message = make_empty_message();
-    if ( input_.reader().bytes_popped() == 0 && !sent_SYN_) {
+    if ( input_.reader().bytes_popped() == 0 && !sent_SYN_ ) {
       empty_message.SYN = true;
       sent_SYN_ = true;
     }
@@ -47,8 +47,8 @@ void TCPSender::push( const TransmitFunction& transmit )
   // but if the reader doesn't have any bytes to send, we can't send anything
   // && !( reader().bytes_buffered() > 0 )?
   while ( abs_last_sent_sn_ < ( abs_last_ackn_sn_ + window_size_ ) && reader().bytes_buffered() > 0 ) {
-    TCPSenderMessage new_message;
-    new_message.seqno = Wrap32::wrap( abs_last_sent_sn_, isn_ );
+    TCPSenderMessage new_message = make_empty_message();
+    // new_message.seqno = Wrap32::wrap( abs_last_sent_sn_, isn_ );
 
     // if we haven't popped any bytes yet, this is the first message!
     if ( input_.reader().bytes_popped() == 0 && !sent_SYN_ ) {
@@ -108,13 +108,6 @@ TCPSenderMessage TCPSender::make_empty_message() const
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
-  // TODO: if there is no ackno, do nothing?
-  // if we get a message without an ackno, send a message with an empty payload
-  // if ( !msg.ackno.has_value() ) {
-  //   push( transmit );
-  //   return;
-  // }
-
   if ( msg.ackno.has_value() ) {
 
     // set the window size
