@@ -84,10 +84,8 @@ private:
   // Datagrams that have been received
   std::queue<InternetDatagram> datagrams_received_ {};
 
-  // The ARP table
-  std::unordered_map<uint32_t, EthernetAddress> arp_table_ {};
-  std::unordered_map<uint32_t, uint64_t> arp_timer_table_ = {};
-
+  std::unordered_map<uint32_t, EthernetAddress> arp_table_ {}; // the ARP table
+  std::unordered_map<uint32_t, uint64_t> arp_timer_table_ = {}; // holds the 5s count for each ip address
   std::unordered_map<uint32_t, uint64_t> arp_exp_timer_table_ = {}; // holds the 30s count for each ip address
-  std::unordered_map<uint32_t, std::queue<InternetDatagram>> waiting_for_arp_queue_ = {};
+  std::unordered_map<uint32_t, std::queue<InternetDatagram>> waiting_for_arp_queue_ = {}; // holds the queue of datagrams waiting for an ARP reply
 };
