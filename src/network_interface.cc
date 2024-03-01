@@ -41,10 +41,11 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
 
   } else {
 
-    // if not send an ARP request for the next_hop's Ethernet address
     // check if there has been an ARP request for the next_hop's Ethernet address in the last 5 seconds
-    // if so, wait for a reply to the first one
-    if ( !waiting_for_arp_queue_.count( next_hop_ip ) ) { // if we're waiting already
+    // if not send an ARP request for the next_hop's Ethernet address
+    // use   std::unordered_map<uint32_t, uint64_t> arp_timer_table_ = {};
+    // check if it exists in the table, and if it does, check if the value is greater than 5000
+    if ( !arp_timer_table_.count( next_hop_ip ) || arp_timer_table_[next_hop_ip] > 5000 ) {
       // send the ARP request
       ARPMessage arpRequest;
       arpRequest.opcode = ARPMessage::OPCODE_REQUEST;
@@ -57,16 +58,15 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
       newFrame.header.dst = ETHERNET_BROADCAST;
       newFrame.header.type = EthernetHeader::TYPE_ARP;
       newFrame.payload = serialize( arpRequest );
-      // waiting_for_arp_.insert( { next_hop_ip, dgram } );
-
       transmit( newFrame );
+      // add the next_hop_ip to the arp_timer_table_ with a value of 0
+      arp_timer_table_.insert( { next_hop_ip, 0 } );
     }
     // queue the IP datagram so it can be sent after the ARP reply is received
+    // we want to do this either way, so we can send the datagram after the ARP reply is received
     if ( waiting_for_arp_queue_.count( next_hop_ip ) ) {
       waiting_for_arp_queue_[next_hop_ip].push( dgram );
     } else {
-      // waiting_for_arp_queue_.insert( { next_hop_ip, { dgram } } );
-      // build a queue of datagrams to send
       queue<InternetDatagram> q;
       q.push( dgram );
       waiting_for_arp_queue_.insert( { next_hop_ip, q } );
@@ -108,7 +108,11 @@ void NetworkInterface::recv_frame( const EthernetFrame& frame )
         newFrame.payload = serialize( arpReply );
         transmit( newFrame );
       }
+
       arp_table_.insert( { arpMessage.sender_ip_address, arpMessage.sender_ethernet_address } );
+      // anytime we insert a new mapping, we reset the timer
+      arp_exp_timer_table_.insert( { arpMessage.sender_ip_address, 0 } );
+
       if ( waiting_for_arp_queue_.count( arpMessage.sender_ip_address ) ) {
         while ( !waiting_for_arp_queue_[arpMessage.sender_ip_address].empty() ) {
           send_datagram( waiting_for_arp_queue_[arpMessage.sender_ip_address].front(),
@@ -124,5 +128,26 @@ void NetworkInterface::recv_frame( const EthernetFrame& frame )
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
 void NetworkInterface::tick( const size_t ms_since_last_tick )
 {
-  (void)ms_since_last_tick;
+  // iterate through arp_exp_timer_table_ if the value + the ms_since_last_tick
+  // is greater than 30000, delete the entry from the arp_table_ and timer table
+  // else, increment the value by ms_since_last_tick
+  for ( auto it = arp_exp_timer_table_.begin(); it != arp_exp_timer_table_.end(); ) {
+    if ( it->second + ms_since_last_tick > 30000 ) {
+      arp_table_.erase( it->first );
+      it = arp_exp_timer_table_.erase( it );
+    } else {
+      it->second += ms_since_last_tick;
+      ++it;
+    }
+  }
+
+  // now do the same idea for the arp_timer_table_
+  for ( auto it = arp_timer_table_.begin(); it != arp_timer_table_.end(); ) {
+    it->second += ms_since_last_tick;
+    if ( it->second > 5000 ) {
+      it = arp_timer_table_.erase( it );
+    } else {
+      ++it;
+    }
+  }
 }

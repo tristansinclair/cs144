@@ -86,13 +86,8 @@ private:
 
   // The ARP table
   std::unordered_map<uint32_t, EthernetAddress> arp_table_ {};
-  std::unordered_map<uint32_t, uint64_t> timer_ = {};
-  // std::unordered_map<uint32_t, InternetDatagram> waiting_for_arp_ = {};
-  bool arp_request_sent_ = false;
-  std::queue<EthernetFrame> ethernet_frame_queue_ {};
-  std::queue<InternetDatagram> datagrams_to_send_ = {};
-  std::unordered_map<uint32_t, std::queue<InternetDatagram>> waiting_for_arp_queue_ = {};
+  std::unordered_map<uint32_t, uint64_t> arp_timer_table_ = {};
 
-  
-  uint64_t arp_ms_passed = 0;
+  std::unordered_map<uint32_t, uint64_t> arp_exp_timer_table_ = {}; // holds the 30s count for each ip address
+  std::unordered_map<uint32_t, std::queue<InternetDatagram>> waiting_for_arp_queue_ = {};
 };
