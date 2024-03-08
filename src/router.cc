@@ -16,15 +16,51 @@ void Router::add_route( const uint32_t route_prefix,
                         const optional<Address> next_hop,
                         const size_t interface_num )
 {
-  cerr << "DEBUG: adding route " << Address::from_ipv4_numeric( route_prefix ).ip() << "/"
-       << static_cast<int>( prefix_length ) << " => " << ( next_hop.has_value() ? next_hop->ip() : "(direct)" )
-       << " on interface " << interface_num << "\n";
-
-  // Your code here.
+  RouteRule rule = { route_prefix, prefix_length, next_hop, interface_num };
+  _route_rules.push_back( rule );
 }
 
 // Go through all the interfaces, and route every incoming datagram to its proper outgoing interface.
 void Router::route()
 {
-  // Your code here.
+  // for each interface in the router
+  //   std::vector<std::shared_ptr<NetworkInterface>> _interfaces {};
+  for ( shared_ptr<NetworkInterface>& interface : _interfaces ) {
+    queue<InternetDatagram>& queue = interface->datagrams_received();
+
+    while ( !queue.empty() ) {
+      InternetDatagram curDatagram = queue.front();
+      if ( curDatagram.header.ttl < 1 ) {
+        queue.pop();
+        continue;
+      }
+
+      // decrement the TTL
+      curDatagram.header.ttl--;
+
+      // intiialize variables to keep track of the longest prefix length and the route to use
+      uint8_t bestPrefixLength = 0;
+      RouteRule* bestRoute = nullptr;
+
+      for ( RouteRule& rule : _route_rules ) {
+        // if the rule's prefix length is longer than the current max prefix length
+        if ( rule.prefix_length > bestPrefixLength ) {
+          // if the rule's prefix matches the datagram's destination address
+          if ( ( rule.route_prefix >> ( 32 - rule.prefix_length ) )
+               == ( curDatagram.header.dst >> ( 32 - rule.prefix_length ) ) ) {
+            bestPrefixLength = rule.prefix_length;
+            bestRoute = &rule;
+          }
+        }
+      }
+
+      if ( bestRoute ) {
+        // find the next hop address, if there isn't one, it's the datagram's final destination
+        Address next_hop = bestRoute->next_hop.has_value() ? bestRoute->next_hop.value()
+                                                           : Address::from_ipv4_numeric( curDatagram.header.dst );
+        // send the datagram out on the best route's interface
+        _interfaces[bestRoute->interface_num]->send_datagram( curDatagram, next_hop );
+      }
+    }
+  }
 }
