@@ -37,6 +37,7 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
     newFrame.payload = serialize( dgram );
     transmit( newFrame );
   } else {
+    waiting_for_arp_queue_[next_hop_ip].push( dgram );
     // If MAC address unknown, check for recent ARP request, else try and send ARP request.
     if ( !arp_timer_table_.count( next_hop_ip ) || arp_timer_table_[next_hop_ip] > 5000 ) {
       ARPMessage arpRequest;
@@ -50,11 +51,12 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
       newFrame.header.dst = ETHERNET_BROADCAST;
       newFrame.header.type = EthernetHeader::TYPE_ARP;
       newFrame.payload = serialize( arpRequest );
+      // waiting_for_arp_queue_[next_hop_ip].push( dgram );
       transmit( newFrame );
       arp_timer_table_[next_hop_ip] = 0;
     }
     // Queue the datagram until ARP reply is received.
-    waiting_for_arp_queue_[next_hop_ip].push( dgram );
+    // waiting_for_arp_queue_[next_hop_ip].push( dgram );
   }
 }
 

@@ -56,7 +56,7 @@ ttest(send_extra)
 
 ttest(net_interface)
 
-ttest(router)
+ttest(router_TEST)
 
 add_custom_target (check0 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --stop-on-failure --timeout 12 -R 'webget|^byte_stream_')
 
@@ -71,7 +71,7 @@ add_custom_target (check3_only COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failur
 
 add_custom_target (check5 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --stop-on-failure --timeout 12 -R '^net_interface')
 
-add_custom_target (check6 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --stop-on-failure --timeout 12 -R '^net_interface|^router')
+add_custom_target (check6 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --stop-on-failure --timeout 12 -R '^net_interface|^router_TEST')
 
 ###
 

@@ -25,13 +25,14 @@ void Router::route()
 {
   // for each interface in the router
   //   std::vector<std::shared_ptr<NetworkInterface>> _interfaces {};
-  for ( shared_ptr<NetworkInterface>& interface : _interfaces ) {
-    queue<InternetDatagram>& queue = interface->datagrams_received();
+  for ( const auto& interface : _interfaces ) {
+    // queue<InternetDatagram>& queue = interface->datagrams_received();
 
-    while ( !queue.empty() ) {
-      InternetDatagram curDatagram = queue.front();
-      if ( curDatagram.header.ttl < 1 ) {
-        queue.pop();
+    while ( !interface->datagrams_received().empty() ) {
+      InternetDatagram curDatagram = interface->datagrams_received().front();
+
+      if ( curDatagram.header.ttl <= 1 ) {
+        interface->datagrams_received().pop();
         continue;
       }
 
@@ -44,10 +45,17 @@ void Router::route()
 
       for ( RouteRule& rule : _route_rules ) {
         // if the rule's prefix length is longer than the current max prefix length
-        if ( rule.prefix_length > bestPrefixLength ) {
+        if ( rule.prefix_length >= bestPrefixLength ) {
+
+          if ( rule.prefix_length == 0 ) {
+            bestPrefixLength = rule.prefix_length;
+            bestRoute = &rule;
+            continue;
+          }
+
           // if the rule's prefix matches the datagram's destination address
-          if ( ( rule.route_prefix >> ( 32 - rule.prefix_length ) )
-               == ( curDatagram.header.dst >> ( 32 - rule.prefix_length ) ) ) {
+          uint32_t mask = 0xFFFFFFFF << ( 32 - rule.prefix_length );
+          if ( ( rule.route_prefix & mask ) == ( curDatagram.header.dst & mask ) ) {
             bestPrefixLength = rule.prefix_length;
             bestRoute = &rule;
           }
@@ -59,8 +67,10 @@ void Router::route()
         Address next_hop = bestRoute->next_hop.has_value() ? bestRoute->next_hop.value()
                                                            : Address::from_ipv4_numeric( curDatagram.header.dst );
         // send the datagram out on the best route's interface
+        curDatagram.header.compute_checksum();
         _interfaces[bestRoute->interface_num]->send_datagram( curDatagram, next_hop );
       }
+      interface->datagrams_received().pop();
     }
   }
 }
