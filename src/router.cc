@@ -20,57 +20,55 @@ void Router::add_route( const uint32_t route_prefix,
   _route_rules.push_back( rule );
 }
 
-// Go through all the interfaces, and route every incoming datagram to its proper outgoing interface.
 void Router::route()
 {
-  // for each interface in the router
-  //   std::vector<std::shared_ptr<NetworkInterface>> _interfaces {};
-  for ( const auto& interface : _interfaces ) {
-    // queue<InternetDatagram>& queue = interface->datagrams_received();
+  // Iterate over all network interfaces in the router
+  for ( auto& interface : _interfaces ) {
+    auto& datagramQueue = interface->datagrams_received(); // Queue of received datagrams for the current interface
 
-    while ( !interface->datagrams_received().empty() ) {
-      InternetDatagram curDatagram = interface->datagrams_received().front();
+    // Process each datagram in the queue
+    while ( !datagramQueue.empty() ) {
+      auto& curDatagram = datagramQueue.front();
 
+      // Drop the datagram if its TTL is 1 or less, ensuring it's not forwarded with a TTL of 0 or less
       if ( curDatagram.header.ttl <= 1 ) {
-        interface->datagrams_received().pop();
+        datagramQueue.pop();
         continue;
       }
 
-      // decrement the TTL
+      // Decrement the TTL for the datagram to be forwarded
       curDatagram.header.ttl--;
 
-      // intiialize variables to keep track of the longest prefix length and the route to use
       uint8_t bestPrefixLength = 0;
       RouteRule* bestRoute = nullptr;
 
+      // Iterate through all routing rules to find the best match based on the longest prefix match
       for ( RouteRule& rule : _route_rules ) {
-        // if the rule's prefix length is longer than the current max prefix length
-        if ( rule.prefix_length >= bestPrefixLength ) {
+        uint32_t mask
+          = 0xFFFFFFFF << ( 32 - rule.prefix_length ); // Create a bitmask for the current rule's prefix length
 
-          if ( rule.prefix_length == 0 ) {
-            bestPrefixLength = rule.prefix_length;
-            bestRoute = &rule;
-            continue;
-          }
-
-          // if the rule's prefix matches the datagram's destination address
-          uint32_t mask = 0xFFFFFFFF << ( 32 - rule.prefix_length );
-          if ( ( rule.route_prefix & mask ) == ( curDatagram.header.dst & mask ) ) {
+        // Compare the high-order bits of the datagram's destination and the rule's prefix using the bitmask
+        if ( ( rule.route_prefix & mask ) == ( curDatagram.header.dst & mask ) ) {
+          // Update the best match if this rule has a longer prefix than previously found
+          if ( rule.prefix_length > bestPrefixLength ) {
             bestPrefixLength = rule.prefix_length;
             bestRoute = &rule;
           }
         }
       }
 
+      // If a matching route is found, forward the datagram accordingly
       if ( bestRoute ) {
-        // find the next hop address, if there isn't one, it's the datagram's final destination
-        Address next_hop = bestRoute->next_hop.has_value() ? bestRoute->next_hop.value()
-                                                           : Address::from_ipv4_numeric( curDatagram.header.dst );
-        // send the datagram out on the best route's interface
-        curDatagram.header.compute_checksum();
+        Address next_hop = bestRoute->next_hop.has_value()
+                             ? bestRoute->next_hop.value()
+                             : Address::from_ipv4_numeric(
+                               curDatagram.header.dst ); // Use the final destination if no next hop is specified
+        // Forward the datagram through the designated interface
         _interfaces[bestRoute->interface_num]->send_datagram( curDatagram, next_hop );
       }
-      interface->datagrams_received().pop();
+
+      // Remove the processed datagram from the queue
+      datagramQueue.pop();
     }
   }
 }
