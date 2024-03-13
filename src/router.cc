@@ -22,21 +22,19 @@ void Router::add_route( const uint32_t route_prefix,
 
 void Router::route()
 {
-  // Iterate over all network interfaces in the router
-  for ( auto& interface : _interfaces ) {
-    auto& datagramQueue = interface->datagrams_received(); // Queue of received datagrams for the current interface
+  for ( const auto& interface : _interfaces ) {
 
     // Process each datagram in the queue
-    while ( !datagramQueue.empty() ) {
-      auto& curDatagram = datagramQueue.front();
+    while ( !interface->datagrams_received().empty() ) {
+      InternetDatagram curDatagram = interface->datagrams_received().front();
 
       // Drop the datagram if its TTL is 1 or less, ensuring it's not forwarded with a TTL of 0 or less
       if ( curDatagram.header.ttl <= 1 ) {
-        datagramQueue.pop();
+        interface->datagrams_received().pop();
         continue;
       }
 
-      // Decrement the TTL for the datagram to be forwarded
+      // decrement the TTL
       curDatagram.header.ttl--;
 
       uint8_t bestPrefixLength = 0;
@@ -45,40 +43,35 @@ void Router::route()
       // Iterate through all routing rules to find the best match based on the longest prefix match
       for ( RouteRule& rule : _route_rules ) {
 
+        // Only look to see if the rule's prefix is better or equal to the current best
         if ( rule.prefix_length >= bestPrefixLength ) {
-
           if ( rule.prefix_length == 0 ) {
             bestPrefixLength = rule.prefix_length;
             bestRoute = &rule;
             continue;
           }
 
-          uint32_t mask
-            = 0xFFFFFFFF << ( 32 - rule.prefix_length ); // Create a bitmask for the current rule's prefix length
+          uint32_t mask = 0xFFFFFFFF << ( 32 - rule.prefix_length );
 
           // Compare the high-order bits of the datagram's destination and the rule's prefix using the bitmask
           if ( ( rule.route_prefix & mask ) == ( curDatagram.header.dst & mask ) ) {
-            // Update the best match if this rule has a longer prefix than previously found
-            if ( rule.prefix_length > bestPrefixLength ) {
-              bestPrefixLength = rule.prefix_length;
-              bestRoute = &rule;
-            }
+            bestPrefixLength = rule.prefix_length;
+            bestRoute = &rule;
           }
         }
       }
 
       // If a matching route is found, forward the datagram accordingly
       if ( bestRoute ) {
-        Address next_hop = bestRoute->next_hop.has_value()
-                             ? bestRoute->next_hop.value()
-                             : Address::from_ipv4_numeric(
-                               curDatagram.header.dst ); // Use the final destination if no next hop is specified
+        Address next_hop = bestRoute->next_hop.has_value() ? bestRoute->next_hop.value()
+                                                           : Address::from_ipv4_numeric( curDatagram.header.dst );
         // Forward the datagram through the designated interface
+        curDatagram.header.compute_checksum();
         _interfaces[bestRoute->interface_num]->send_datagram( curDatagram, next_hop );
       }
 
       // Remove the processed datagram from the queue
-      datagramQueue.pop();
+      interface->datagrams_received().pop();
     }
   }
 }
