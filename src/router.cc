@@ -44,15 +44,25 @@ void Router::route()
 
       // Iterate through all routing rules to find the best match based on the longest prefix match
       for ( RouteRule& rule : _route_rules ) {
-        uint32_t mask
-          = 0xFFFFFFFF << ( 32 - rule.prefix_length ); // Create a bitmask for the current rule's prefix length
 
-        // Compare the high-order bits of the datagram's destination and the rule's prefix using the bitmask
-        if ( ( rule.route_prefix & mask ) == ( curDatagram.header.dst & mask ) ) {
-          // Update the best match if this rule has a longer prefix than previously found
-          if ( rule.prefix_length > bestPrefixLength ) {
+        if ( rule.prefix_length >= bestPrefixLength ) {
+
+          if ( rule.prefix_length == 0 ) {
             bestPrefixLength = rule.prefix_length;
             bestRoute = &rule;
+            continue;
+          }
+
+          uint32_t mask
+            = 0xFFFFFFFF << ( 32 - rule.prefix_length ); // Create a bitmask for the current rule's prefix length
+
+          // Compare the high-order bits of the datagram's destination and the rule's prefix using the bitmask
+          if ( ( rule.route_prefix & mask ) == ( curDatagram.header.dst & mask ) ) {
+            // Update the best match if this rule has a longer prefix than previously found
+            if ( rule.prefix_length > bestPrefixLength ) {
+              bestPrefixLength = rule.prefix_length;
+              bestRoute = &rule;
+            }
           }
         }
       }
